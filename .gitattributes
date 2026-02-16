@@ -1,0 +1,9 @@
+*.dart linguist-detectable=true
+*.java linguist-vendored
+*.kt linguist-vendored
+*.cpp linguist-vendored
+*.c linguist-vendored
+*.h linguist-vendored
+*.html linguist-vendored
+*.css linguist-vendored
+*.js linguist-vendored
