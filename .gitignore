@@ -1,6 +1,9 @@
-
-# Android / Gradle generated files
-android-kotlin/.gradle/
-android-kotlin/**/build/
-android-kotlin/local.properties
-android-kotlin/.idea/
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
