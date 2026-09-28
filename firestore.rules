@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Public Movie Discussions / Comments ──────────────────────────────────
+    // - Anyone (including unauthenticated users) can read discussions.
+    // - Authenticated users can create comments as long as userId matches auth.uid.
+    // - Users can edit or delete ONLY their own comments.
+    match /discussions/{movieId}/comments/{commentId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Ratings & Reviews ───────────────────────────────────────────────────
+    // - Anyone can read movie reviews.
+    // - Authenticated users can create, edit, or delete ONLY their own review for each movie.
+    match /reviews/{movieId}/userReviews/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── User Library / Profile (Favourites, Watchlist, Mirrored Reviews) ────
+    // - Only the authenticated owner can read and write their personal data.
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

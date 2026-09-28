@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Search
+import com.example.movieratings.ui.theme.AppIcons
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +46,7 @@ import com.example.movieratings.viewmodel.HomeViewModel
 fun HomeScreen(
     viewModel: HomeViewModel,
     onSearchClick: () -> Unit,
+    onLibraryClick: () -> Unit,
     onLogoutClick: () -> Unit,
     onItemClick: (MediaItem) -> Unit
 ) {
@@ -68,6 +70,13 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    IconButton(onClick = onLibraryClick) {
+                        Icon(
+                            imageVector = AppIcons.VideoLibrary,
+                            contentDescription = "My Library",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }

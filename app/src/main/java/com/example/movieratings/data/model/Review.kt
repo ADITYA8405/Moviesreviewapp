@@ -48,11 +48,11 @@ data class Review(
         fun fromMap(map: Map<String, Any?>): Review = Review(
             userId     = map["userId"]     as? String ?: "",
             userEmail  = map["userEmail"]  as? String ?: "",
-            movieId    = (map["movieId"]   as? Long)?.toInt() ?: 0,
-            rating     = (map["rating"]    as? Long)?.toInt() ?: 0,
+            movieId    = (map["movieId"]   as? Number)?.toInt() ?: 0,
+            rating     = (map["rating"]    as? Number)?.toInt() ?: 0,
             reviewText = map["reviewText"] as? String ?: "",
-            createdAt  = map["createdAt"]  as? Long ?: 0L,
-            updatedAt  = map["updatedAt"]  as? Long ?: 0L
+            createdAt  = (map["createdAt"]  as? Number)?.toLong() ?: 0L,
+            updatedAt  = (map["updatedAt"]  as? Number)?.toLong() ?: 0L
         )
     }
 }

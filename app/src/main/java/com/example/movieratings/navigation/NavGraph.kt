@@ -12,21 +12,24 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.movieratings.ui.screens.DetailsScreen
 import com.example.movieratings.ui.screens.HomeScreen
+import com.example.movieratings.ui.screens.LibraryScreen
 import com.example.movieratings.ui.screens.LoginScreen
 import com.example.movieratings.ui.screens.SearchScreen
 import com.example.movieratings.ui.screens.SignupScreen
 import com.example.movieratings.viewmodel.AuthViewModel
 import com.example.movieratings.viewmodel.HomeViewModel
 import com.example.movieratings.viewmodel.SearchViewModel
+import com.example.movieratings.viewmodel.UserLibraryViewModel
 
 /**
- * Navigation routes for authentication, home, search, and details.
+ * Navigation routes for authentication, home, search, library and details.
  */
 object Routes {
     const val LOGIN = "login"
     const val SIGNUP = "signup"
     const val HOME = "home"
     const val SEARCH = "search"
+    const val LIBRARY = "library"
     const val DETAILS = "details/{movieId}"
 
     fun detailsRoute(movieId: Int) = "details/$movieId"
@@ -36,7 +39,8 @@ object Routes {
 fun NavGraph(
     navController: NavHostController,
     homeViewModel: HomeViewModel = viewModel(),
-    authViewModel: AuthViewModel = viewModel()
+    authViewModel: AuthViewModel = viewModel(),
+    libraryViewModel: UserLibraryViewModel = viewModel()
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     val currentUserId    = currentUser?.uid
@@ -59,6 +63,13 @@ fun NavGraph(
                     popUpTo(0) { inclusive = true }
                 }
             }
+        }
+    }
+
+    // Initialize user library flows as soon as authenticated
+    LaunchedEffect(currentUserId) {
+        if (currentUserId != null) {
+            libraryViewModel.initLibrary(currentUserId)
         }
     }
 
@@ -95,6 +106,12 @@ fun NavGraph(
                 onSearchClick = {
                     navController.navigate(Routes.SEARCH)
                 },
+                onLibraryClick = {
+                    if (currentUserId != null) {
+                        libraryViewModel.initLibrary(currentUserId)
+                    }
+                    navController.navigate(Routes.LIBRARY)
+                },
                 onLogoutClick = {
                     authViewModel.logout()
                 },
@@ -117,6 +134,29 @@ fun NavGraph(
             )
         }
 
+        // Library / Profile screen
+        composable(Routes.LIBRARY) {
+            // Ensure library data is loaded for the current user
+            LaunchedEffect(currentUserId) {
+                if (currentUserId != null) {
+                    libraryViewModel.initLibrary(currentUserId)
+                }
+            }
+
+            LibraryScreen(
+                viewModel     = libraryViewModel,
+                userEmail     = currentUserEmail,
+                onBackClick   = { navController.popBackStack() },
+                onMovieClick  = { savedMovie ->
+                    homeViewModel.saveItem(savedMovie.toMediaItem())
+                    navController.navigate(Routes.detailsRoute(savedMovie.movieId))
+                },
+                onReviewClick = { movieId ->
+                    navController.navigate(Routes.detailsRoute(movieId))
+                }
+            )
+        }
+
         // Details screen — receives movieId from the route
         composable(
             route = Routes.DETAILS,
@@ -131,7 +171,8 @@ fun NavGraph(
                 item             = item,
                 onBackClick      = { navController.popBackStack() },
                 currentUserId    = currentUserId,
-                currentUserEmail = currentUserEmail
+                currentUserEmail = currentUserEmail,
+                libraryViewModel = libraryViewModel
             )
         }
     }

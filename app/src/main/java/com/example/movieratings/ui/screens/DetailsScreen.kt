@@ -32,8 +32,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Star
+import com.example.movieratings.ui.theme.AppIcons
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,10 +73,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.movieratings.data.model.DiscussionComment
 import com.example.movieratings.data.model.MediaItem
 import com.example.movieratings.data.model.Review
+import com.example.movieratings.data.repository.SavedMovie
 import com.example.movieratings.ui.theme.White
+import com.example.movieratings.viewmodel.DiscussionViewModel
 import com.example.movieratings.viewmodel.ReviewViewModel
+import com.example.movieratings.viewmodel.UserLibraryViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -85,6 +92,8 @@ private val OwnCardBg    = Color(0xFF1E1418)   // very subtle warm tint for own 
 private val OwnCardBorder= Color(0xFF8B0000).copy(alpha = 0.6f)
 private val SubtleText   = Color(0xFF888888)
 private val DividerColor = Color(0xFF2A2A2A)
+private val FavRed       = Color(0xFFE53935)
+private val WatchlistBlue = Color(0xFF42A5F5)
 
 /**
  * Movie/TV details screen with an improved rating & review section.
@@ -96,7 +105,9 @@ fun DetailsScreen(
     onBackClick: () -> Unit,
     currentUserId: String?,
     currentUserEmail: String?,
-    reviewViewModel: ReviewViewModel = viewModel()
+    reviewViewModel: ReviewViewModel = viewModel(),
+    discussionViewModel: DiscussionViewModel = viewModel(),
+    libraryViewModel: UserLibraryViewModel
 ) {
     LaunchedEffect(item?.id, currentUserId) {
         if (item != null && currentUserId != null) {
@@ -105,6 +116,8 @@ fun DetailsScreen(
                 userId    = currentUserId,
                 userEmail = currentUserEmail ?: currentUserId
             )
+            discussionViewModel.init(item.id)
+            libraryViewModel.initLibrary(currentUserId)
         }
     }
 
@@ -115,6 +128,21 @@ fun DetailsScreen(
     val draftText   by reviewViewModel.draftText.collectAsState()
     val isSaving    by reviewViewModel.isSaving.collectAsState()
     val errorMsg    by reviewViewModel.errorMessage.collectAsState()
+
+    // Public discussion state
+    val comments         by discussionViewModel.comments.collectAsState()
+    val draftComment     by discussionViewModel.draftComment.collectAsState()
+    val isPostingComment by discussionViewModel.isPosting.collectAsState()
+    val editingCommentId by discussionViewModel.editingCommentId.collectAsState()
+    val editingText      by discussionViewModel.editingText.collectAsState()
+    val isSavingEdit     by discussionViewModel.isSavingEdit.collectAsState()
+    val discussionError  by discussionViewModel.errorMessage.collectAsState()
+
+    // Favourite / Watchlist state derived reactively from real-time library flows
+    val favourites    by libraryViewModel.favourites.collectAsState()
+    val watchlist     by libraryViewModel.watchlist.collectAsState()
+    val isFavourite   = item != null && favourites.any { it.movieId == item.id }
+    val isInWatchlist = item != null && watchlist.any { it.movieId == item.id }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -244,7 +272,119 @@ fun DetailsScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Favourite / Watchlist action row ──────────────────────────
+            if (currentUserId != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Favourite button
+                    val favBg by animateColorAsState(
+                        targetValue = if (isFavourite) FavRed.copy(alpha = 0.15f) else CardBg,
+                        animationSpec = tween(200),
+                        label = "favBg"
+                    )
+                    val favBorder by animateColorAsState(
+                        targetValue = if (isFavourite) FavRed.copy(alpha = 0.5f) else DividerColor,
+                        animationSpec = tween(200),
+                        label = "favBorder"
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(favBg)
+                            .border(1.dp, favBorder, RoundedCornerShape(10.dp))
+                            .clickable {
+                                libraryViewModel.toggleFavourite(
+                                    currentUserId,
+                                    SavedMovie(
+                                        movieId      = item.id,
+                                        title        = item.displayTitle,
+                                        posterPath   = item.posterPath,
+                                        backdropPath = item.backdropPath,
+                                        overview     = item.overview,
+                                        voteAverage  = item.voteAverage,
+                                        releaseDate  = item.displayDate
+                                    )
+                                )
+                            }
+                            .padding(vertical = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavourite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = if (isFavourite) "Remove from favourites" else "Add to favourites",
+                            tint = if (isFavourite) FavRed else SubtleText,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isFavourite) "Favourited" else "Favourite",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isFavourite) FavRed else SubtleText,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Watchlist button
+                    val wlBg by animateColorAsState(
+                        targetValue = if (isInWatchlist) WatchlistBlue.copy(alpha = 0.15f) else CardBg,
+                        animationSpec = tween(200),
+                        label = "wlBg"
+                    )
+                    val wlBorder by animateColorAsState(
+                        targetValue = if (isInWatchlist) WatchlistBlue.copy(alpha = 0.5f) else DividerColor,
+                        animationSpec = tween(200),
+                        label = "wlBorder"
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(wlBg)
+                            .border(1.dp, wlBorder, RoundedCornerShape(10.dp))
+                            .clickable {
+                                libraryViewModel.toggleWatchlist(
+                                    currentUserId,
+                                    SavedMovie(
+                                        movieId      = item.id,
+                                        title        = item.displayTitle,
+                                        posterPath   = item.posterPath,
+                                        backdropPath = item.backdropPath,
+                                        overview     = item.overview,
+                                        voteAverage  = item.voteAverage,
+                                        releaseDate  = item.displayDate
+                                    )
+                                )
+                            }
+                            .padding(vertical = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isInWatchlist) AppIcons.Bookmark else AppIcons.BookmarkBorder,
+                            contentDescription = if (isInWatchlist) "Remove from watchlist" else "Add to watchlist",
+                            tint = if (isInWatchlist) WatchlistBlue else SubtleText,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isInWatchlist) "In Watchlist" else "Watchlist",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isInWatchlist) WatchlistBlue else SubtleText,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
             HorizontalDivider(color = DividerColor, thickness = 1.dp)
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -273,6 +413,42 @@ fun DetailsScreen(
                     },
                     onDeleteClick   = { reviewViewModel.deleteReview(item.id, currentUserId) },
                     onClearError    = reviewViewModel::clearError
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(color = DividerColor, thickness = 1.dp)
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Public Discussion / Comments section ──────────────────────
+            if (currentUserId != null) {
+                DiscussionSection(
+                    movieId          = item.id,
+                    userId           = currentUserId,
+                    userEmail        = currentUserEmail ?: currentUserId,
+                    comments         = comments,
+                    draftComment     = draftComment,
+                    isPosting        = isPostingComment,
+                    editingCommentId = editingCommentId,
+                    editingText      = editingText,
+                    isSavingEdit     = isSavingEdit,
+                    errorMessage     = discussionError,
+                    onDraftChange    = discussionViewModel::setDraftComment,
+                    onPostComment    = {
+                        discussionViewModel.postComment(
+                            movieId   = item.id,
+                            userId    = currentUserId,
+                            userEmail = currentUserEmail ?: currentUserId
+                        )
+                    },
+                    onStartEdit      = discussionViewModel::startEditing,
+                    onEditTextChange = discussionViewModel::setEditingText,
+                    onCancelEdit     = discussionViewModel::cancelEditing,
+                    onSaveEdit       = { discussionViewModel.saveEditedComment(item.id) },
+                    onDeleteComment  = { commentId ->
+                        discussionViewModel.deleteComment(item.id, commentId)
+                    },
+                    onClearError     = discussionViewModel::clearError
                 )
             }
 
@@ -826,4 +1002,410 @@ private fun ratingLabel(rating: Int): String = when (rating) {
 private fun formatDate(epochMillis: Long): String {
     if (epochMillis == 0L) return ""
     return SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(epochMillis))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DiscussionSection
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun DiscussionSection(
+    movieId: Int,
+    userId: String,
+    userEmail: String,
+    comments: List<DiscussionComment>,
+    draftComment: String,
+    isPosting: Boolean,
+    editingCommentId: String?,
+    editingText: String,
+    isSavingEdit: Boolean,
+    errorMessage: String?,
+    onDraftChange: (String) -> Unit,
+    onPostComment: () -> Unit,
+    onStartEdit: (DiscussionComment) -> Unit,
+    onEditTextChange: (String) -> Unit,
+    onCancelEdit: () -> Unit,
+    onSaveEdit: () -> Unit,
+    onDeleteComment: (String) -> Unit,
+    onClearError: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        // ── Section Header ───────────────────────────────────────────────
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = AppIcons.Chat,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Community Discussion",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = White
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            // Count pill badge
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF282828))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "${comments.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SubtleText,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Share your thoughts and discuss this title with other fans.",
+            style = MaterialTheme.typography.bodySmall,
+            color = SubtleText
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Post a comment box ───────────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(CardBg)
+                .border(1.dp, DividerColor, RoundedCornerShape(14.dp))
+                .padding(12.dp)
+        ) {
+            OutlinedTextField(
+                value = draftComment,
+                onValueChange = {
+                    onDraftChange(it)
+                    if (errorMessage != null) onClearError()
+                },
+                placeholder = {
+                    Text(
+                        "Write a comment...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SubtleText
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(90.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    unfocusedBorderColor = DividerColor,
+                    focusedTextColor = White,
+                    unfocusedTextColor = White,
+                    cursorColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(10.dp),
+                textStyle = MaterialTheme.typography.bodyMedium
+            )
+
+            if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onPostComment,
+                    enabled = draftComment.isNotBlank() && !isPosting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        disabledContainerColor = Color(0xFF2C2C2C),
+                        disabledContentColor = SubtleText
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isPosting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = White
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Posting...", style = MaterialTheme.typography.labelMedium)
+                    } else {
+                        Icon(
+                            imageVector = AppIcons.Send,
+                            contentDescription = "Post",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (draftComment.isNotBlank()) White else SubtleText
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Post Comment", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ── Comments List ────────────────────────────────────────────────
+        if (comments.isEmpty()) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(CardBg.copy(alpha = 0.5f))
+                    .padding(vertical = 24.dp, horizontal = 16.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = AppIcons.Chat,
+                        contentDescription = null,
+                        tint = SubtleText.copy(alpha = 0.5f),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "No comments yet.\nBe the first to start the discussion!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SubtleText,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                comments.forEach { comment ->
+                    val isEditingThis = editingCommentId == comment.id
+                    DiscussionCommentCard(
+                        comment = comment,
+                        isOwnComment = comment.userId == userId,
+                        isEditing = isEditingThis,
+                        editingText = if (isEditingThis) editingText else "",
+                        isSavingEdit = if (isEditingThis) isSavingEdit else false,
+                        onEditTextChange = onEditTextChange,
+                        onStartEdit = { onStartEdit(comment) },
+                        onCancelEdit = onCancelEdit,
+                        onSaveEdit = onSaveEdit,
+                        onDelete = { onDeleteComment(comment.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscussionCommentCard(
+    comment: DiscussionComment,
+    isOwnComment: Boolean,
+    isEditing: Boolean,
+    editingText: String,
+    isSavingEdit: Boolean,
+    onEditTextChange: (String) -> Unit,
+    onStartEdit: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onSaveEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val cardBackground = if (isOwnComment) Color(0xFF1E1E26) else CardBg
+    val cardBorder = if (isOwnComment) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) else DividerColor
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(cardBackground)
+            .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // User avatar
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isOwnComment)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                        else
+                            Color(0xFF2E3238)
+                    )
+            ) {
+                Text(
+                    text = comment.displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "U",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isOwnComment) MaterialTheme.colorScheme.primary else Color(0xFFCCCCCC),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = comment.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = White,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (isOwnComment) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "You",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = formatCommentDate(comment.createdAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SubtleText
+                    )
+                    if (comment.isEdited) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "(edited)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = SubtleText.copy(alpha = 0.7f),
+                            fontStyle = FontStyle.Italic
+                        )
+                    }
+                }
+            }
+
+            // Edit & Delete actions (Only visible to comment author)
+            if (isOwnComment && !isEditing) {
+                IconButton(
+                    onClick = onStartEdit,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = "Edit comment",
+                        tint = SubtleText.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(2.dp))
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete comment",
+                        tint = SubtleText.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (isEditing) {
+            // Inline comment edit form
+            OutlinedTextField(
+                value = editingText,
+                onValueChange = onEditTextChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = DividerColor,
+                    focusedTextColor = White,
+                    unfocusedTextColor = White,
+                    cursorColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(8.dp),
+                textStyle = MaterialTheme.typography.bodyMedium
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onCancelEdit) {
+                    Text("Cancel", color = SubtleText)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = onSaveEdit,
+                    enabled = editingText.isNotBlank() && !isSavingEdit,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    if (isSavingEdit) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = White
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Saving...", style = MaterialTheme.typography.labelSmall)
+                    } else {
+                        Text("Save", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        } else {
+            Text(
+                text = comment.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFDDDDDD),
+                lineHeight = 20.sp
+            )
+        }
+    }
+}
+
+private fun formatCommentDate(epochMillis: Long): String {
+    if (epochMillis == 0L) return ""
+    val diff = System.currentTimeMillis() - epochMillis
+    return when {
+        diff < 60_000L -> "Just now"
+        diff < 3600_000L -> "${diff / 60_000L}m ago"
+        diff < 86400_000L -> "${diff / 3600_000L}h ago"
+        else -> SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(epochMillis))
+    }
 }

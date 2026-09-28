@@ -45,16 +45,17 @@ class ReviewRepository {
             .document(movieId.toString())
             .collection("userReviews")
 
+    private fun userReviewsCollection(userId: String) =
+        db.collection("users")
+            .document(userId)
+            .collection("reviews")
+
     // ── Write operations ─────────────────────────────────────────────────────
 
     /**
      * Saves (or fully replaces) a user's review for [movieId].
      * Because the document ID is the user's UID, a second call simply updates
      * the existing document — no duplicates can form.
-     *
-     * Uses [suspendCancellableCoroutine] so the operation can be cancelled when
-     * the ViewModel scope is cleared, and [withTimeout] to prevent infinite hangs
-     * when Firestore is offline.
      */
     suspend fun saveReview(review: Review): Result<Unit> {
         return try {
@@ -68,16 +69,16 @@ class ReviewRepository {
                             .document(review.userId)
                             .get()
                         task.addOnSuccessListener { snap ->
-                            if (cont.isActive) cont.resume(snap.getLong("createdAt") ?: now)
+                            val createdAt = (snap.data?.get("createdAt") as? Number)?.toLong() ?: now
+                            if (cont.isActive) cont.resume(createdAt)
                         }
                         task.addOnFailureListener {
-                            // Non-fatal — treat as first-time save
                             if (cont.isActive) cont.resume(now)
                         }
                     }
                 }
             } catch (_: Exception) {
-                now // timeout or cancellation — safe fallback
+                now
             }
 
             val data = review.copy(
@@ -87,13 +88,13 @@ class ReviewRepository {
 
             withTimeout(FIRESTORE_TIMEOUT_MS) {
                 suspendCancellableCoroutine { cont ->
-                    val task = reviewsCollection(review.movieId)
-                        .document(review.userId)
-                        .set(data)
-                    task.addOnSuccessListener {
+                    val task1 = reviewsCollection(review.movieId).document(review.userId).set(data)
+                    userReviewsCollection(review.userId).document(review.movieId.toString()).set(data)
+
+                    task1.addOnSuccessListener {
                         if (cont.isActive) cont.resume(Unit)
                     }
-                    task.addOnFailureListener { e ->
+                    task1.addOnFailureListener { e ->
                         if (cont.isActive) cont.resumeWithException(e)
                     }
                 }
@@ -113,6 +114,7 @@ class ReviewRepository {
             withTimeout(FIRESTORE_TIMEOUT_MS) {
                 suspendCancellableCoroutine { cont ->
                     val task = reviewsCollection(movieId).document(userId).delete()
+                    userReviewsCollection(userId).document(movieId.toString()).delete()
                     task.addOnSuccessListener {
                         if (cont.isActive) cont.resume(Unit)
                     }
@@ -139,9 +141,6 @@ class ReviewRepository {
         listenerRegistration = reviewsCollection(movieId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    // Emit an empty list instead of closing the flow with an exception.
-                    // Closing with an exception propagates through collect() and crashes
-                    // the ViewModel's coroutine unless the caller has an explicit try-catch.
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
@@ -149,6 +148,27 @@ class ReviewRepository {
                     doc.data?.let { Review.fromMap(it) }
                 } ?: emptyList()
                 trySend(reviews)
+            }
+
+        awaitClose { listenerRegistration?.remove() }
+    }
+
+    /**
+     * Returns a real-time [Flow] of all reviews written by [userId].
+     */
+    fun getUserReviewsFlow(userId: String): Flow<List<Review>> = callbackFlow {
+        var listenerRegistration: ListenerRegistration? = null
+
+        listenerRegistration = userReviewsCollection(userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val reviews = snapshot?.documents?.mapNotNull { doc ->
+                    doc.data?.let { Review.fromMap(it) }
+                } ?: emptyList()
+                trySend(reviews.sortedByDescending { it.updatedAt })
             }
 
         awaitClose { listenerRegistration?.remove() }
@@ -173,6 +193,46 @@ class ReviewRepository {
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /**
+     * Fetches all reviews written by [userId] across all movies.
+     */
+    suspend fun getAllReviewsByUser(userId: String): List<Review> {
+        return try {
+            withTimeout(FIRESTORE_TIMEOUT_MS) {
+                suspendCancellableCoroutine { cont ->
+                    userReviewsCollection(userId).get()
+                        .addOnSuccessListener { snapshot ->
+                            val reviews = snapshot.documents.mapNotNull { doc ->
+                                doc.data?.let { Review.fromMap(it) }
+                            }
+                            if (reviews.isNotEmpty()) {
+                                if (cont.isActive) cont.resume(reviews)
+                            } else {
+                                // Fall back to collectionGroup if user collection is empty
+                                db.collectionGroup("userReviews")
+                                    .whereEqualTo("userId", userId)
+                                    .get()
+                                    .addOnSuccessListener { groupSnap ->
+                                        val groupReviews = groupSnap.documents.mapNotNull { d ->
+                                            d.data?.let { Review.fromMap(it) }
+                                        }
+                                        if (cont.isActive) cont.resume(groupReviews)
+                                    }
+                                    .addOnFailureListener {
+                                        if (cont.isActive) cont.resume(emptyList())
+                                    }
+                            }
+                        }
+                        .addOnFailureListener {
+                            if (cont.isActive) cont.resume(emptyList())
+                        }
+                }
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }
