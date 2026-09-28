@@ -44,3 +44,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Native Kotlin/Android generated files
+android-kotlin/.gradle/
+android-kotlin/**/build/
+android-kotlin/local.properties
+android-kotlin/.idea/
