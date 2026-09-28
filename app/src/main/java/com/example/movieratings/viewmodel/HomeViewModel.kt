@@ -96,4 +96,14 @@ class HomeViewModel : ViewModel() {
 
     /** Looks up a previously loaded item by its TMDb ID. Used by the Details screen. */
     fun getItemById(id: Int): MediaItem? = allItems[id]
+
+    /** Caches an item in memory so Details screen can resolve it. */
+    fun saveItem(item: MediaItem) {
+        allItems[item.id] = item
+    }
+
+    /** Caches a list of items in memory. */
+    fun saveItems(items: List<MediaItem>) {
+        items.forEach { allItems[it.id] = it }
+    }
 }

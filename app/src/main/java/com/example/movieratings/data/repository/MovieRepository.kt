@@ -32,4 +32,9 @@ class MovieRepository {
     suspend fun getPopularTv(): List<MediaItem> {
         return api.getPopularTv(apiKey).results
     }
+
+    /** Searches movies and TV shows by title/name query. */
+    suspend fun searchMulti(query: String): List<MediaItem> {
+        return api.searchMulti(apiKey, query).results
+    }
 }

@@ -30,4 +30,10 @@ interface TmdbApi {
     suspend fun getPopularTv(
         @Query("api_key") apiKey: String
     ): TmdbResponse
+
+    @GET("search/multi")
+    suspend fun searchMulti(
+        @Query("api_key") apiKey: String,
+        @Query("query") query: String
+    ): TmdbResponse
 }

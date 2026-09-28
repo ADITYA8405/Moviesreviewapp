@@ -24,7 +24,16 @@ object RetrofitClient {
     // Configure the JSON parser to skip fields we don't model
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val okHttpClient = OkHttpClient.Builder().build()
+    private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            android.util.Log.d("RetrofitClient", "Request URL path: ${request.url.encodedPath}")
+            android.util.Log.d("RetrofitClient", "API key param length: ${request.url.queryParameter("api_key")?.length ?: 0}")
+            val response = chain.proceed(request)
+            android.util.Log.d("RetrofitClient", "Response Code for ${request.url.encodedPath}: ${response.code}")
+            response
+        }
+        .build()
 
     private val retrofit = Retrofit.Builder()
         .baseUrl(BASE_URL)
